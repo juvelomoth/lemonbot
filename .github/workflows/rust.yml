@@ -19,7 +19,7 @@ jobs:
     - name: Python install confusables
       run:  pip install confusables
     - name: Switch to nightly
-      run: cargo default nightly
+      run: rustup default nightly
     - name: Build
       run: cargo build --verbose
     - name: Run tests
