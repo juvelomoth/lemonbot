@@ -26,7 +26,7 @@ fn main() {
     "ilamuna",
     "lemon",
     "lemun",
-    "liin",
+    // "liin",
     "limau",
     "limoi",
     "limon",
