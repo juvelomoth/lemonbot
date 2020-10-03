@@ -13,12 +13,16 @@ regex = "1"
 lazy_static = "*"
 unic = "0.9.0"
 config = "0.10.1"
+dedup_iter = "0.1.1"
+rand = "*"
+thread_local = "*"
 
 
 [build-dependencies]
 inline-python = "0.6.0"
 unicode-normalization = "0.1.8"
 unic = "0.9.0"
+dedup_iter = "0.1.1"
 
 [target.x86_64-unknown-linux-musl]
 rustflags = ["-C", "prefer-dynamic"]

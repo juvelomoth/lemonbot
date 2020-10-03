@@ -16,8 +16,12 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Python install confusables
-      run:  pip install confusables
+    - name: Setup Python
+      uses: actions/setup-python@v2
+    - name: Python install deps
+      run: |
+        python -m pip install --upgrade pip
+        pip install confusables
     - name: Switch to nightly
       run: rustup default nightly
     - name: Build
