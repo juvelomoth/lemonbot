@@ -1,3 +1,3 @@
-discord_token = "NzU0NjA3Mzc1MjU5Nzk1NDc4.X13M4g.4qRoNSYHbh9TrPI45vHl1GAcAX8"
-azure_token = "876413f69ab441619dc2ab7a31f9fb7e"
-azure_endpoint = "https://mothvision.cognitiveservices.azure.com/"
+discord_token = ""
+azure_token = ""
+azure_endpoint = ""
