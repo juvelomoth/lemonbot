@@ -1,12 +1,15 @@
+#![feature(try_blocks)]
+
 use dedup_iter::DedupAdapter;
+use lazy_regex::regex;
 use lazy_static::lazy_static;
 use rand::{prelude::ThreadRng, thread_rng, Rng};
 use regex::{Regex, RegexSet};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ops;
 use unic::ucd::category::GeneralCategory;
 // extern crate azure_sdk_for_rust;
-use serenity::client::Client;
 use serenity::framework::standard::{
     macros::{command, group},
     CommandResult, StandardFramework,
@@ -14,20 +17,33 @@ use serenity::framework::standard::{
 use serenity::model::channel::Message;
 use serenity::model::channel::ReactionType;
 use serenity::prelude::{Context, EventHandler};
+use serenity::{client::Client, model::guild::Emoji, model::id::EmojiId};
 
 use ureq::json;
 
 #[group]
-#[commands(ping)]
+// #[commands(ping)]
 struct General;
 
 struct Handler;
 impl EventHandler for Handler {}
 
+/*
+#[command]
+fn ping(ctx: &mut Context, msg: &Message) -> CommandResult {
+    msg.reply(ctx, "Pong!")?;
+
+    Ok(())
+}
+*/
+
 lazy_static! {
     static ref LEMON_REGEX: Regex = Regex::new(include_str!("../regex_lemon.txt")).unwrap();
     static ref MABBS_REGEX: Regex = Regex::new(include_str!("../regex_mabbs.txt")).unwrap();
     static ref ASHER_REGEX: Regex = Regex::new(include_str!("../regex_asher.txt")).unwrap();
+    static ref LUC_REGEX: Regex = Regex::new(include_str!("../regex_lucretius.txt")).unwrap();
+    static ref MOTH_REGEX: Regex = Regex::new(include_str!("../regex_moth.txt")).unwrap();
+    static ref LIME_REGEX: Regex = Regex::new(include_str!("../regex_lime.txt")).unwrap();
     static ref IMAGE_URL_REGEX: Regex = Regex::new(r"(?i)\.(jpe?g|png|tiff|bmp)[^\./]*$").unwrap();
     static ref VENT_REGEX: Regex =
         Regex::new(r"(?i)\b(vent(ing)?|serious|emotional support)\b").unwrap();
@@ -52,6 +68,9 @@ struct RegResult {
     lemon: bool,
     mabbs: bool,
     asher: bool,
+    lucretius: bool,
+    moth: bool,
+    lime: bool,
 }
 
 impl ops::Add for RegResult {
@@ -61,6 +80,9 @@ impl ops::Add for RegResult {
             lemon: self.lemon || other.lemon,
             mabbs: self.mabbs || other.mabbs,
             asher: self.asher || other.asher,
+            lucretius: self.lucretius || other.lucretius,
+            moth: self.moth || other.moth,
+            lime: self.lime || other.lime,
         }
     }
 }
@@ -84,6 +106,9 @@ fn get_text_flags(s: &str) -> RegResult {
         lemon: LEMON_REGEX.is_match(ssss),
         mabbs: MABBS_REGEX.is_match(ssss),
         asher: ASHER_REGEX.is_match(ssss),
+        lucretius: LUC_REGEX.is_match(ssss),
+        moth: MOTH_REGEX.is_match(ssss),
+        lime: LIME_REGEX.is_match(ssss),
     }
 }
 fn get_img_flags(msg: &Message, _ctx: &Context) -> RegResult {
@@ -122,6 +147,9 @@ fn get_img_flags(msg: &Message, _ctx: &Context) -> RegResult {
                         lemon: true,
                         mabbs: false,
                         asher: false,
+                        lucretius: false,
+                        moth: false,
+                        lime: false,
                     };
                 }
             }
@@ -133,21 +161,31 @@ fn get_img_flags(msg: &Message, _ctx: &Context) -> RegResult {
         lemon: false,
         mabbs: false,
         asher: false,
+        lucretius: false,
+        moth: false,
+        lime: false,
     }
 }
 
+fn react_msg(ctx: &Context, msg: &Message, r: ReactionType, dorand: bool) {
+    if !dorand || RNG.with(|r| r.borrow_mut().gen_range(0, 4) == 0) {
+        if let Some(e) = msg.react(ctx, r).err() {
+            println!("Error reacting to message {}: {}", msg.id, e);
+        }
+    }
+}
 
-fn react_msg<R: Into<ReactionType>>(ctx: &Context, msg: &Message, r: R, dorand: bool) {
-    if (!dorand || RNG.with(|r| r.borrow_mut().gen_range(0, 5) == 0)) && msg.react(ctx, r).is_err()
-    {
-        println!("Error reacting to message {}", msg.id);
-    };
+fn select_emoji(reg: &Regex, map: &HashMap<EmojiId, Emoji>) -> Option<ReactionType> {
+    map.values()
+        .find(|e| reg.is_match(&*e.name))
+        .map(|e| ReactionType::from(e.clone()))
 }
 
 fn handle_message(ctx: &mut Context, msg: &Message) {
     if msg.is_own(&ctx) {
         return;
     }
+
     if let Some(channel) = msg.channel(&ctx) {
         let guild = channel.guild();
         if guild.is_some() && VENT_REGEX.is_match(&guild.unwrap().read().name) {
@@ -158,11 +196,11 @@ fn handle_message(ctx: &mut Context, msg: &Message) {
     let mut res = get_text_flags(&msg.content_safe(&ctx));
 
     for emb in &msg.embeds {
-        if emb.description.is_some() {
-            res = res + get_text_flags(emb.description.as_ref().unwrap());
+        if let Some(description) = emb.description.as_ref() {
+            res = res + get_text_flags(description);
         }
-        if emb.author.is_some() {
-            res = res + get_text_flags(&emb.author.as_ref().unwrap().name);
+        if let Some(author) = emb.author.as_ref() {
+            res = res + get_text_flags(&author.name);
         }
     }
 
@@ -171,17 +209,57 @@ fn handle_message(ctx: &mut Context, msg: &Message) {
     }
 
     if res.lemon {
-        react_msg(ctx, msg, '🍋', false);
-        return;
+        react_msg(ctx, msg, ReactionType::from('🍋'), false);
     }
+
+    let emojis: Option<_> = try {
+        msg.channel(&ctx)?
+            .guild()?
+            .read()
+            .guild(&ctx)?
+            .read()
+            .emojis
+            .clone()
+    };
+    let emojis = emojis.unwrap_or_default();
+
     if res.mabbs {
-        react_msg(ctx, msg, '🍋', true);
-        return;
+        let emoji = select_emoji(regex!("(?i)mabb"), &emojis)
+            .or_else(|| select_emoji(regex!("(?i)blu.*fox"), &emojis))
+            .or_else(|| select_emoji(regex!("(?i)lemon.*fox"), &emojis))
+            .or_else(|| select_emoji(regex!("(?i)fox"), &emojis))
+            .unwrap_or_else(|| ReactionType::from('🍋'));
+        react_msg(ctx, msg, emoji, true);
     }
-    // if res.asher {
-        // react_msg(ctx, msg, '🍋', true);
-        // return;
-    // }
+    if res.asher {
+        let emoji = select_emoji(regex!("(?i)asher"), &emojis)
+            .or_else(|| select_emoji(regex!("(?i)red.*panda"), &emojis))
+            .or_else(|| select_emoji(regex!("(?i)panda"), &emojis))
+            .unwrap_or_else(|| ReactionType::from('🐼'));
+        react_msg(ctx, msg, emoji, true);
+    }
+    if res.lucretius {
+        let emoji = select_emoji(regex!("(?i)lucretius"), &emojis)
+            .or_else(|| select_emoji(regex!("(?i)lucario"), &emojis))
+            .or_else(|| select_emoji(regex!("(?i)luc"), &emojis))
+            .or_else(|| select_emoji(regex!("(?i)purple"), &emojis))
+            .or_else(|| select_emoji(regex!("(?i)purple"), &emojis))
+            .or_else(|| select_emoji(regex!("(?i)cute"), &emojis))
+            .unwrap_or_else(|| ReactionType::from('🍇'));
+        react_msg(ctx, msg, emoji, true);
+    }
+    if res.moth {
+        let emoji = select_emoji(regex!("(?i)juvelo"), &emojis)
+            .or_else(|| select_emoji(regex!("(?i)moth"), &emojis))
+            .unwrap_or_else(|| ReactionType::from('👀'));
+        react_msg(ctx, msg, emoji, true);
+    }
+
+    if res.lime {
+        let emoji =
+            select_emoji(regex!("(?i)lime"), &emojis).unwrap_or_else(|| ReactionType::from('👀'));
+        react_msg(ctx, msg, emoji, false);
+    }
 }
 
 fn main() {
@@ -203,11 +281,4 @@ fn main() {
     if let Err(why) = client.start() {
         println!("An error occurred while running the client: {:?}", why);
     }
-}
-
-#[command]
-fn ping(ctx: &mut Context, msg: &Message) -> CommandResult {
-    msg.reply(ctx, "Pong!")?;
-
-    Ok(())
 }

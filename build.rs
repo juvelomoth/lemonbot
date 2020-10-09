@@ -117,5 +117,11 @@ fn main() {
 
     makereg(&lemons, "regex_lemon.txt");
     makereg(&["mabbs"], "regex_mabbs.txt");
-    makereg(&["asher", "stinky"], "regex_asher.txt")
+    makereg(
+        &["asher", "stink", "stonk", "stimk", "stomk"],
+        "regex_asher.txt",
+    );
+    makereg(&["lucretius"], "regex_lucretius.txt");
+    makereg(&["moth"], "regex_moth.txt");
+    makereg(&["lime"], "regex_lime.txt");
 }
